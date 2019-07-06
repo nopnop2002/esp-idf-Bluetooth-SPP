@@ -1,5 +1,8 @@
 # How to use
 
+Build Accepter at first.  
+After that build Initiator.   
+
 Start communication by Button press.   
 When a button is pressed for more than 2 seconds, It stop comminucation.   
 

@@ -4,7 +4,7 @@ You can communicate in Classic Bluetooth SPP Profile using 2 of ESP32.
 
 ---
 
-# acceptor for M5Stack
+# Acceptor for M5Stack
 
 
 ```
@@ -18,7 +18,7 @@ make flash
 
 ---
 
-# initiator for M5StickC
+# Initiator for M5StickC
 
 ```
 git clone https://github.com/nopnop2002/esp-idf-Bluetooth-SPP
@@ -31,7 +31,7 @@ make flash
 
 ---
 
-# initiator for M5Stick
+# Initiator for M5Stick
 
 ```
 git clone https://github.com/nopnop2002/esp-idf-Bluetooth-SPP
