@@ -2,6 +2,12 @@
 Classic Bluetooth SPP Profile for esp-idf.   
 You can communicate in Classic Bluetooth SPP Profile using 2 of ESP32.   
 
+I modified from this.   
+
+https://github.com/espressif/esp-idf/tree/master/examples/bluetooth/bluedroid/classic_bt/bt_spp_acceptor
+
+https://github.com/espressif/esp-idf/tree/master/examples/bluetooth/bluedroid/classic_bt/bt_spp_initiator
+
 ---
 
 # Acceptor for M5Stack
