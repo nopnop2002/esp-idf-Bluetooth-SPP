@@ -1,5 +1,5 @@
 # esp-idf-Bluetooth-SPP
-Classic Bluetooth SPP Profile for esp-idf.   
+Classic Bluetooth SPP example for esp-idf.   
 You can communicate in Classic Bluetooth SPP Profile using 2 of ESP32.   
 
 I modified from this.   
