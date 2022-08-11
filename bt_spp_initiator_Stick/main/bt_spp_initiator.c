@@ -28,6 +28,8 @@
 #include "esp_vfs.h"
 #include "esp_spiffs.h"
 
+#include "cmd.h"
+
 #define SPP_TAG "SPP_INITIATOR"
 #define EXCAMPLE_DEVICE_NAME "ESP_SPP_INITIATOR"
 
@@ -46,26 +48,11 @@ static const uint8_t inq_num_rsps = 0;
 #define SPP_DATA_LEN 20
 static uint8_t spp_data[SPP_DATA_LEN];
 
-#define CMD_OPEN	100
-#define CMD_SEND	200
-#define CMD_START	220
-#define CMD_STOP	240
-#define CMD_RECEIVE	300
-#define CMD_CLOSE	400
-
-typedef struct {
-    uint32_t sppHandle;
-    uint16_t command;
-    size_t   length;
-    uint8_t  payload[64];
-    TaskHandle_t taskHandle;
-} CMD_t;
-
 QueueHandle_t xQueueCmd;
 
-#define CONFIG_STACK	0
-#define CONFIG_STICKC	0
-#define CONFIG_STICK 	1
+#define CONFIG_STACK 0
+#define CONFIG_STICKC 0
+#define CONFIG_STICK 1
 
 #if CONFIG_STACK
 #include "ili9340.h"
@@ -84,217 +71,217 @@ QueueHandle_t xQueueCmd;
 #endif
 
 #if CONFIG_STACK
-#define SCREEN_WIDTH	320
-#define SCREEN_HEIGHT	240
-#define CS_GPIO		14
-#define DC_GPIO		27
-#define RESET_GPIO	33
-#define BL_GPIO		32
-#define FONT_WIDTH	12
-#define FONT_HEIGHT	24
-#define MAX_LINE	8
-#define DISPLAY_LENGTH	26
-#define GPIO_INPUT_A	GPIO_NUM_39
-#define GPIO_INPUT_B	GPIO_NUM_38
-#define GPIO_INPUT_C	GPIO_NUM_37
+#define SCREEN_WIDTH 320
+#define SCREEN_HEIGHT 240
+#define CS_GPIO 14
+#define DC_GPIO 27
+#define RESET_GPIO 33
+#define BL_GPIO 32
+#define FONT_WIDTH 12
+#define FONT_HEIGHT 24
+#define MAX_LINE 8
+#define DISPLAY_LENGTH 26
+#define GPIO_INPUT_A GPIO_NUM_39
+#define GPIO_INPUT_B GPIO_NUM_38
+#define GPIO_INPUT_C GPIO_NUM_37
 #endif
 
 #if CONFIG_STICKC
-#define SCREEN_WIDTH	80
-#define SCREEN_HEIGHT	160
-#define FONT_WIDTH	8
+#define SCREEN_WIDTH 80
+#define SCREEN_HEIGHT 160
+#define FONT_WIDTH 8
 #define FONT_HEIGHT	16
-#define MAX_LINE	8
-#define DISPLAY_LENGTH	10
-#define GPIO_INPUT	GPIO_NUM_37
+#define MAX_LINE 8
+#define DISPLAY_LENGTH 10
+#define GPIO_INPUT GPIO_NUM_37
 #endif
 
 #if CONFIG_STICK
-#define MAX_LINE	14
-#define DISPLAY_LENGTH	8
-#define GPIO_INPUT	GPIO_NUM_35
+#define MAX_LINE 14
+#define DISPLAY_LENGTH 8
+#define GPIO_INPUT GPIO_NUM_35
 #define GPIO_BUZZER	GPIO_NUM_26
 #endif
 
 
 static bool get_name_from_eir(uint8_t *eir, char *bdname, uint8_t *bdname_len)
 {
-    uint8_t *rmt_bdname = NULL;
-    uint8_t rmt_bdname_len = 0;
+	uint8_t *rmt_bdname = NULL;
+	uint8_t rmt_bdname_len = 0;
 
-    if (!eir) {
-        return false;
-    }
+	if (!eir) {
+		return false;
+	}
 
-    rmt_bdname = esp_bt_gap_resolve_eir_data(eir, ESP_BT_EIR_TYPE_CMPL_LOCAL_NAME, &rmt_bdname_len);
-    if (!rmt_bdname) {
-        rmt_bdname = esp_bt_gap_resolve_eir_data(eir, ESP_BT_EIR_TYPE_SHORT_LOCAL_NAME, &rmt_bdname_len);
-    }
+	rmt_bdname = esp_bt_gap_resolve_eir_data(eir, ESP_BT_EIR_TYPE_CMPL_LOCAL_NAME, &rmt_bdname_len);
+	if (!rmt_bdname) {
+		rmt_bdname = esp_bt_gap_resolve_eir_data(eir, ESP_BT_EIR_TYPE_SHORT_LOCAL_NAME, &rmt_bdname_len);
+	}
 
-    if (rmt_bdname) {
-        if (rmt_bdname_len > ESP_BT_GAP_MAX_BDNAME_LEN) {
-            rmt_bdname_len = ESP_BT_GAP_MAX_BDNAME_LEN;
-        }
+	if (rmt_bdname) {
+		if (rmt_bdname_len > ESP_BT_GAP_MAX_BDNAME_LEN) {
+			rmt_bdname_len = ESP_BT_GAP_MAX_BDNAME_LEN;
+		}
 
-        if (bdname) {
-            memcpy(bdname, rmt_bdname, rmt_bdname_len);
-            bdname[rmt_bdname_len] = '\0';
-        }
-        if (bdname_len) {
-            *bdname_len = rmt_bdname_len;
-        }
-        return true;
-    }
+		if (bdname) {
+			memcpy(bdname, rmt_bdname, rmt_bdname_len);
+			bdname[rmt_bdname_len] = '\0';
+		}
+		if (bdname_len) {
+			*bdname_len = rmt_bdname_len;
+		}
+		return true;
+	}
 
-    return false;
+	return false;
 }
 
 static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
 {
-    CMD_t cmdBuf;
-    switch (event) {
-    case ESP_SPP_INIT_EVT:
-        ESP_LOGI(SPP_TAG, "ESP_SPP_INIT_EVT");
-        esp_bt_dev_set_device_name(EXCAMPLE_DEVICE_NAME);
-        esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
-        esp_bt_gap_start_discovery(inq_mode, inq_len, inq_num_rsps);
-        break;
-    case ESP_SPP_DISCOVERY_COMP_EVT:
-        ESP_LOGI(SPP_TAG, "ESP_SPP_DISCOVERY_COMP_EVT status=%d scn_num=%d",param->disc_comp.status, param->disc_comp.scn_num);
-        if (param->disc_comp.status == ESP_SPP_SUCCESS) {
-            esp_spp_connect(sec_mask, role_master, param->disc_comp.scn[0], peer_bd_addr);
-        }
-        break;
-    case ESP_SPP_OPEN_EVT:
-        ESP_LOGI(SPP_TAG, "ESP_SPP_OPEN_EVT");
-        //esp_spp_write(param->srv_open.handle, SPP_DATA_LEN, spp_data);
-        cmdBuf.sppHandle = param->srv_open.handle;
-        cmdBuf.command = CMD_OPEN;
-        xQueueSend(xQueueCmd, &cmdBuf, 0);
-        break;
-    case ESP_SPP_CLOSE_EVT:
-        ESP_LOGI(SPP_TAG, "ESP_SPP_CLOSE_EVT");
-        cmdBuf.command = CMD_CLOSE;
-        xQueueSend(xQueueCmd, &cmdBuf, 0);
-        break;
-    case ESP_SPP_START_EVT:
-        ESP_LOGI(SPP_TAG, "ESP_SPP_START_EVT");
-        break;
-    case ESP_SPP_CL_INIT_EVT:
-        ESP_LOGI(SPP_TAG, "ESP_SPP_CL_INIT_EVT");
-        break;
-    case ESP_SPP_DATA_IND_EVT:
-        //ESP_LOGI(SPP_TAG, "ESP_SPP_DATA_IND_EVT");
-        ESP_LOGI(SPP_TAG, "ESP_SPP_DATA_IND_EVT len=%d handle=%d",
-                 param->data_ind.len, param->data_ind.handle);
-        esp_log_buffer_hex("",param->data_ind.data,param->data_ind.len);
-        break;
-    case ESP_SPP_CONG_EVT:
-        ESP_LOGI(SPP_TAG, "ESP_SPP_CONG_EVT cong=%d", param->cong.cong);
-        if (param->cong.cong == 0) {
-            esp_spp_write(param->cong.handle, SPP_DATA_LEN, spp_data);
-        }
-        break;
-    case ESP_SPP_WRITE_EVT:
-        ESP_LOGI(SPP_TAG, "ESP_SPP_WRITE_EVT len=%d cong=%d", param->write.len , param->write.cong);
-        break;
-    case ESP_SPP_SRV_OPEN_EVT:
-        ESP_LOGI(SPP_TAG, "ESP_SPP_SRV_OPEN_EVT");
-        break;
-    default:
-        break;
-    }
+	CMD_t cmdBuf;
+	switch (event) {
+	case ESP_SPP_INIT_EVT:
+		ESP_LOGI(SPP_TAG, "ESP_SPP_INIT_EVT");
+		esp_bt_dev_set_device_name(EXCAMPLE_DEVICE_NAME);
+		esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
+		esp_bt_gap_start_discovery(inq_mode, inq_len, inq_num_rsps);
+		break;
+	case ESP_SPP_DISCOVERY_COMP_EVT:
+		ESP_LOGI(SPP_TAG, "ESP_SPP_DISCOVERY_COMP_EVT status=%d scn_num=%d",param->disc_comp.status, param->disc_comp.scn_num);
+		if (param->disc_comp.status == ESP_SPP_SUCCESS) {
+			esp_spp_connect(sec_mask, role_master, param->disc_comp.scn[0], peer_bd_addr);
+		}
+		break;
+	case ESP_SPP_OPEN_EVT:
+		ESP_LOGI(SPP_TAG, "ESP_SPP_OPEN_EVT");
+		//esp_spp_write(param->srv_open.handle, SPP_DATA_LEN, spp_data);
+		cmdBuf.sppHandle = param->srv_open.handle;
+		cmdBuf.command = CMD_OPEN;
+		xQueueSend(xQueueCmd, &cmdBuf, 0);
+		break;
+	case ESP_SPP_CLOSE_EVT:
+		ESP_LOGI(SPP_TAG, "ESP_SPP_CLOSE_EVT");
+		cmdBuf.command = CMD_CLOSE;
+		xQueueSend(xQueueCmd, &cmdBuf, 0);
+		break;
+	case ESP_SPP_START_EVT:
+		ESP_LOGI(SPP_TAG, "ESP_SPP_START_EVT");
+		break;
+	case ESP_SPP_CL_INIT_EVT:
+		ESP_LOGI(SPP_TAG, "ESP_SPP_CL_INIT_EVT");
+		break;
+	case ESP_SPP_DATA_IND_EVT:
+		//ESP_LOGI(SPP_TAG, "ESP_SPP_DATA_IND_EVT");
+		ESP_LOGI(SPP_TAG, "ESP_SPP_DATA_IND_EVT len=%d handle=%d",
+				 param->data_ind.len, param->data_ind.handle);
+		esp_log_buffer_hex("",param->data_ind.data,param->data_ind.len);
+		break;
+	case ESP_SPP_CONG_EVT:
+		ESP_LOGI(SPP_TAG, "ESP_SPP_CONG_EVT cong=%d", param->cong.cong);
+		if (param->cong.cong == 0) {
+			esp_spp_write(param->cong.handle, SPP_DATA_LEN, spp_data);
+		}
+		break;
+	case ESP_SPP_WRITE_EVT:
+		ESP_LOGI(SPP_TAG, "ESP_SPP_WRITE_EVT len=%d cong=%d", param->write.len , param->write.cong);
+		break;
+	case ESP_SPP_SRV_OPEN_EVT:
+		ESP_LOGI(SPP_TAG, "ESP_SPP_SRV_OPEN_EVT");
+		break;
+	default:
+		break;
+	}
 }
 
 static void esp_bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
 {
-    switch(event){
-    case ESP_BT_GAP_DISC_RES_EVT:
-        ESP_LOGI(SPP_TAG, "ESP_BT_GAP_DISC_RES_EVT");
-        esp_log_buffer_hex(SPP_TAG, param->disc_res.bda, ESP_BD_ADDR_LEN);
-        ESP_LOGI(SPP_TAG, "ESP_BT_GAP_DISC_RES_EVT param->disc_res.num_prop=%d", param->disc_res.num_prop);
-        for (int i = 0; i < param->disc_res.num_prop; i++){
-            if (param->disc_res.prop[i].type == ESP_BT_GAP_DEV_PROP_EIR
-                && get_name_from_eir(param->disc_res.prop[i].val, peer_bdname, &peer_bdname_len)){
-                esp_log_buffer_char(SPP_TAG, peer_bdname, peer_bdname_len);
-                if (strlen(remote_device_name) == peer_bdname_len
-                    && strncmp(peer_bdname, remote_device_name, peer_bdname_len) == 0) {
-                    memcpy(peer_bd_addr, param->disc_res.bda, ESP_BD_ADDR_LEN);
-                    esp_spp_start_discovery(peer_bd_addr);
-                    esp_bt_gap_cancel_discovery();
-                }
-            }
-        }
-        break;
-    case ESP_BT_GAP_DISC_STATE_CHANGED_EVT:
-        ESP_LOGI(SPP_TAG, "ESP_BT_GAP_DISC_STATE_CHANGED_EVT");
-        break;
-    case ESP_BT_GAP_RMT_SRVCS_EVT:
-        ESP_LOGI(SPP_TAG, "ESP_BT_GAP_RMT_SRVCS_EVT");
-        break;
-    case ESP_BT_GAP_RMT_SRVC_REC_EVT:
-        ESP_LOGI(SPP_TAG, "ESP_BT_GAP_RMT_SRVC_REC_EVT");
-        break;
-    case ESP_BT_GAP_AUTH_CMPL_EVT:{
-        if (param->auth_cmpl.stat == ESP_BT_STATUS_SUCCESS) {
-            ESP_LOGI(SPP_TAG, "authentication success: %s", param->auth_cmpl.device_name);
-            esp_log_buffer_hex(SPP_TAG, param->auth_cmpl.bda, ESP_BD_ADDR_LEN);
-        } else {
-            ESP_LOGE(SPP_TAG, "authentication failed, status:%d", param->auth_cmpl.stat);
-        }
-        break;
-    }
-    case ESP_BT_GAP_PIN_REQ_EVT:{
-        ESP_LOGI(SPP_TAG, "ESP_BT_GAP_PIN_REQ_EVT min_16_digit:%d", param->pin_req.min_16_digit);
-        if (param->pin_req.min_16_digit) {
-            ESP_LOGI(SPP_TAG, "Input pin code: 0000 0000 0000 0000");
-            esp_bt_pin_code_t pin_code = {0};
-            esp_bt_gap_pin_reply(param->pin_req.bda, true, 16, pin_code);
-        } else {
-            ESP_LOGI(SPP_TAG, "Input pin code: 1234");
-            esp_bt_pin_code_t pin_code;
-            pin_code[0] = '1';
-            pin_code[1] = '2';
-            pin_code[2] = '3';
-            pin_code[3] = '4';
-            esp_bt_gap_pin_reply(param->pin_req.bda, true, 4, pin_code);
-        }
-        break;
-    }
+	switch(event){
+	case ESP_BT_GAP_DISC_RES_EVT:
+		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_DISC_RES_EVT");
+		esp_log_buffer_hex(SPP_TAG, param->disc_res.bda, ESP_BD_ADDR_LEN);
+		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_DISC_RES_EVT param->disc_res.num_prop=%d", param->disc_res.num_prop);
+		for (int i = 0; i < param->disc_res.num_prop; i++){
+			if (param->disc_res.prop[i].type == ESP_BT_GAP_DEV_PROP_EIR
+				&& get_name_from_eir(param->disc_res.prop[i].val, peer_bdname, &peer_bdname_len)){
+				esp_log_buffer_char(SPP_TAG, peer_bdname, peer_bdname_len);
+				if (strlen(remote_device_name) == peer_bdname_len
+					&& strncmp(peer_bdname, remote_device_name, peer_bdname_len) == 0) {
+					memcpy(peer_bd_addr, param->disc_res.bda, ESP_BD_ADDR_LEN);
+					esp_spp_start_discovery(peer_bd_addr);
+					esp_bt_gap_cancel_discovery();
+				}
+			}
+		}
+		break;
+	case ESP_BT_GAP_DISC_STATE_CHANGED_EVT:
+		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_DISC_STATE_CHANGED_EVT");
+		break;
+	case ESP_BT_GAP_RMT_SRVCS_EVT:
+		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_RMT_SRVCS_EVT");
+		break;
+	case ESP_BT_GAP_RMT_SRVC_REC_EVT:
+		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_RMT_SRVC_REC_EVT");
+		break;
+	case ESP_BT_GAP_AUTH_CMPL_EVT:{
+		if (param->auth_cmpl.stat == ESP_BT_STATUS_SUCCESS) {
+			ESP_LOGI(SPP_TAG, "authentication success: %s", param->auth_cmpl.device_name);
+			esp_log_buffer_hex(SPP_TAG, param->auth_cmpl.bda, ESP_BD_ADDR_LEN);
+		} else {
+			ESP_LOGE(SPP_TAG, "authentication failed, status:%d", param->auth_cmpl.stat);
+		}
+		break;
+	}
+	case ESP_BT_GAP_PIN_REQ_EVT:{
+		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_PIN_REQ_EVT min_16_digit:%d", param->pin_req.min_16_digit);
+		if (param->pin_req.min_16_digit) {
+			ESP_LOGI(SPP_TAG, "Input pin code: 0000 0000 0000 0000");
+			esp_bt_pin_code_t pin_code = {0};
+			esp_bt_gap_pin_reply(param->pin_req.bda, true, 16, pin_code);
+		} else {
+			ESP_LOGI(SPP_TAG, "Input pin code: 1234");
+			esp_bt_pin_code_t pin_code;
+			pin_code[0] = '1';
+			pin_code[1] = '2';
+			pin_code[2] = '3';
+			pin_code[3] = '4';
+			esp_bt_gap_pin_reply(param->pin_req.bda, true, 4, pin_code);
+		}
+		break;
+	}
 
 #if (CONFIG_BT_SSP_ENABLED == true)
-    case ESP_BT_GAP_CFM_REQ_EVT:
-        ESP_LOGI(SPP_TAG, "ESP_BT_GAP_CFM_REQ_EVT Please compare the numeric value: %d", param->cfm_req.num_val);
-        esp_bt_gap_ssp_confirm_reply(param->cfm_req.bda, true);
-        break;
-    case ESP_BT_GAP_KEY_NOTIF_EVT:
-        ESP_LOGI(SPP_TAG, "ESP_BT_GAP_KEY_NOTIF_EVT passkey:%d", param->key_notif.passkey);
-        break;
-    case ESP_BT_GAP_KEY_REQ_EVT:
-        ESP_LOGI(SPP_TAG, "ESP_BT_GAP_KEY_REQ_EVT Please enter passkey!");
-        break;
+	case ESP_BT_GAP_CFM_REQ_EVT:
+		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_CFM_REQ_EVT Please compare the numeric value: %d", param->cfm_req.num_val);
+		esp_bt_gap_ssp_confirm_reply(param->cfm_req.bda, true);
+		break;
+	case ESP_BT_GAP_KEY_NOTIF_EVT:
+		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_KEY_NOTIF_EVT passkey:%d", param->key_notif.passkey);
+		break;
+	case ESP_BT_GAP_KEY_REQ_EVT:
+		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_KEY_REQ_EVT Please enter passkey!");
+		break;
 #endif
 
-    default:
-        break;
-    }
+	default:
+		break;
+	}
 }
 
 #if CONFIG_STICK || CONFIG_STICKC
 void buttonStick(void *pvParameters)
 {
-	ESP_LOGI(pcTaskGetTaskName(0), "Start");
+	ESP_LOGI(pcTaskGetName(0), "Start");
 	CMD_t cmdBuf;
 	cmdBuf.taskHandle = xTaskGetCurrentTaskHandle();
 
 	// set the GPIO as a input
-	gpio_pad_select_gpio(GPIO_INPUT);
+	gpio_reset_pin(GPIO_INPUT);
 	gpio_set_direction(GPIO_INPUT, GPIO_MODE_DEF_INPUT);
 
 	while(1) {
 		int level = gpio_get_level(GPIO_INPUT);
 		if (level == 0) {
-			ESP_LOGI(pcTaskGetTaskName(0), "Push Button");
+			ESP_LOGI(pcTaskGetName(0), "Push Button");
 			cmdBuf.command = CMD_START;
 			TickType_t startTick = xTaskGetTickCount();
 			while(1) {
@@ -304,7 +291,7 @@ void buttonStick(void *pvParameters)
 			}
 			TickType_t endTick = xTaskGetTickCount();
 			TickType_t diffTick = endTick-startTick;
-			ESP_LOGI(pcTaskGetTaskName(0),"diffTick=%d",diffTick);
+			ESP_LOGI(pcTaskGetName(0),"diffTick=%d",diffTick);
 			cmdBuf.command = CMD_START;
 			if (diffTick > 200) cmdBuf.command = CMD_STOP;
 			xQueueSend(xQueueCmd, &cmdBuf, 0);
@@ -318,7 +305,7 @@ void buttonStick(void *pvParameters)
 #if CONFIG_STACK
 void buttonA(void *pvParameters)
 {
-	ESP_LOGI(pcTaskGetTaskName(0), "Start");
+	ESP_LOGI(pcTaskGetName(0), "Start");
 	CMD_t cmdBuf;
 	cmdBuf.command = CMD_SEND;
 	strcpy((char *)cmdBuf.payload, "abcdefghijk");
@@ -326,13 +313,13 @@ void buttonA(void *pvParameters)
 	cmdBuf.taskHandle = xTaskGetCurrentTaskHandle();
 
 	// set the GPIO as a input
-	gpio_pad_select_gpio(GPIO_INPUT_A);
+	gpio_reset_pin(GPIO_INPUT_A);
 	gpio_set_direction(GPIO_INPUT_A, GPIO_MODE_DEF_INPUT);
 
 	while(1) {
 		int level = gpio_get_level(GPIO_INPUT_A);
 		if (level == 0) {
-			ESP_LOGI(pcTaskGetTaskName(0), "Push Button");
+			ESP_LOGI(pcTaskGetName(0), "Push Button");
 			while(1) {
 				level = gpio_get_level(GPIO_INPUT_A);
 				if (level == 1) break;
@@ -346,7 +333,7 @@ void buttonA(void *pvParameters)
 
 void buttonB(void *pvParameters)
 {
-	ESP_LOGI(pcTaskGetTaskName(0), "Start");
+	ESP_LOGI(pcTaskGetName(0), "Start");
 	CMD_t cmdBuf;
 	cmdBuf.command = CMD_SEND;
 	strcpy((char *)cmdBuf.payload, "01234567890");
@@ -354,13 +341,13 @@ void buttonB(void *pvParameters)
 	cmdBuf.taskHandle = xTaskGetCurrentTaskHandle();
 
 	// set the GPIO as a input
-	gpio_pad_select_gpio(GPIO_INPUT_B);
+	gpio_reset_pin(GPIO_INPUT_B);
 	gpio_set_direction(GPIO_INPUT_B, GPIO_MODE_DEF_INPUT);
 
 	while(1) {
 		int level = gpio_get_level(GPIO_INPUT_B);
 		if (level == 0) {
-			ESP_LOGI(pcTaskGetTaskName(0), "Push Button");
+			ESP_LOGI(pcTaskGetName(0), "Push Button");
 			while(1) {
 				level = gpio_get_level(GPIO_INPUT_B);
 				if (level == 1) break;
@@ -374,7 +361,7 @@ void buttonB(void *pvParameters)
 
 void buttonC(void *pvParameters)
 {
-	ESP_LOGI(pcTaskGetTaskName(0), "Start");
+	ESP_LOGI(pcTaskGetName(0), "Start");
 	CMD_t cmdBuf;
 	cmdBuf.command = CMD_SEND;
 	strcpy((char *)cmdBuf.payload, "ABCDEFGHIJK");
@@ -382,13 +369,13 @@ void buttonC(void *pvParameters)
 	cmdBuf.taskHandle = xTaskGetCurrentTaskHandle();
 
 	// set the GPIO as a input
-	gpio_pad_select_gpio(GPIO_INPUT_C);
+	gpio_reset_pin(GPIO_INPUT_C);
 	gpio_set_direction(GPIO_INPUT_C, GPIO_MODE_DEF_INPUT);
 
 	while(1) {
 		int level = gpio_get_level(GPIO_INPUT_C);
 		if (level == 0) {
-			ESP_LOGI(pcTaskGetTaskName(0), "Push Button");
+			ESP_LOGI(pcTaskGetName(0), "Push Button");
 			while(1) {
 				level = gpio_get_level(GPIO_INPUT_C);
 				if (level == 1) break;
@@ -406,7 +393,7 @@ void buttonC(void *pvParameters)
 #if CONFIG_STACK
 void tft(void *pvParameters)
 {
-	ESP_LOGI(pcTaskGetTaskName(0), "Start");
+	ESP_LOGI(pcTaskGetName(0), "Start");
 	// set font file
 	FontxFile fxG[2];
 	InitFontx(fxG,"/spiffs/ILGH24XB.FNT",""); // 12x24Dot Gothic
@@ -418,13 +405,13 @@ void tft(void *pvParameters)
 	uint8_t fontWidth;
 	uint8_t fontHeight;
 	GetFontx(fxG, 0, buffer, &fontWidth, &fontHeight);
-	ESP_LOGD(pcTaskGetTaskName(0), "fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
+	ESP_LOGD(pcTaskGetName(0), "fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
 
 	// Setup Screen
 	TFT_t dev;
 	spi_master_init(&dev, CS_GPIO, DC_GPIO, RESET_GPIO, BL_GPIO);
 	lcdInit(&dev, 0x9341, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
-	ESP_LOGI(pcTaskGetTaskName(0), "Setup Screen done");
+	ESP_LOGI(pcTaskGetName(0), "Setup Screen done");
 
 	// Initial Screen
 	uint8_t ascii[DISPLAY_LENGTH+1];
@@ -443,7 +430,7 @@ void tft(void *pvParameters)
 	CMD_t cmdBuf;
 	while(1) {
 		xQueueReceive(xQueueCmd, &cmdBuf, portMAX_DELAY);
-		ESP_LOGI(pcTaskGetTaskName(0),"cmdBuf.command=%d", cmdBuf.command);
+		ESP_LOGI(pcTaskGetName(0),"cmdBuf.command=%d", cmdBuf.command);
 		if (cmdBuf.command == CMD_OPEN) {
 			sppHandle = cmdBuf.sppHandle;
 			strcpy((char *)ascii, "Connect");
@@ -478,7 +465,7 @@ void tft(void *pvParameters)
 #endif
 
 #if CONFIG_STICKC
-static void send_timercb(void *timer)
+static void timer_cb(TimerHandle_t arg)
 {
 	static uint32_t counter = 0;
 	CMD_t cmdBuf;
@@ -494,7 +481,7 @@ static void send_timercb(void *timer)
 #if CONFIG_STICKC
 void tft(void *pvParameters)
 {
-	ESP_LOGI(pcTaskGetTaskName(0), "Start");
+	ESP_LOGI(pcTaskGetName(0), "Start");
 	// set font file
 	FontxFile fxG[2];
 	InitFontx(fxG,"/spiffs/ILGH16XB.FNT",""); // 8x16Dot Gothic
@@ -506,13 +493,13 @@ void tft(void *pvParameters)
 	uint8_t fontWidth;
 	uint8_t fontHeight;
 	GetFontx(fxG, 0, buffer, &fontWidth, &fontHeight);
-	ESP_LOGD(pcTaskGetTaskName(0), "fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
+	ESP_LOGD(pcTaskGetName(0), "fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
 
 	// Setup Screen
 	ST7735_t dev;
 	spi_master_init(&dev);
 	lcdInit(&dev, SCREEN_WIDTH, SCREEN_HEIGHT);
-	ESP_LOGI(pcTaskGetTaskName(0), "Setup Screen done");
+	ESP_LOGI(pcTaskGetName(0), "Setup Screen done");
 
 	// Initial Screen
 	uint8_t ascii[DISPLAY_LENGTH+1];
@@ -531,7 +518,7 @@ void tft(void *pvParameters)
 
 	while(1) {
 		xQueueReceive(xQueueCmd, &cmdBuf, portMAX_DELAY);
-		ESP_LOGI(pcTaskGetTaskName(0),"cmdBuf.command=%d", cmdBuf.command);
+		ESP_LOGI(pcTaskGetName(0),"cmdBuf.command=%d", cmdBuf.command);
 		if (cmdBuf.command == CMD_OPEN) {
 			sppHandle = cmdBuf.sppHandle;
 			strcpy((char *)ascii, "Connect");
@@ -579,7 +566,7 @@ void tft(void *pvParameters)
 #endif
 
 #if CONFIG_STICK
-static void send_timercb(void *timer)
+static void timer_cb(TimerHandle_t arg)
 {
 	static uint32_t counter = 0;
 	CMD_t cmdBuf;
@@ -595,19 +582,19 @@ static void send_timercb(void *timer)
 #if CONFIG_STICK
 void tft(void *pvParameters)
 {
-	ESP_LOGI(pcTaskGetTaskName(0), "Start");
+	ESP_LOGI(pcTaskGetName(0), "Start");
 
 	// Setup Screen
 	SH1107_t dev;
 	spi_master_init(&dev);
 	spi_init(&dev, 64, 128);
-	ESP_LOGI(pcTaskGetTaskName(0), "Setup Screen done");
+	ESP_LOGI(pcTaskGetName(0), "Setup Screen done");
 
 	// Initial Screen
 	clear_screen(&dev, false);
 	display_contrast(&dev, 0xff);
 	char ascii[DISPLAY_LENGTH+1];
-	strcpy(ascii, "SPP     ");
+	strcpy(ascii, "SPP	   ");
 	display_text(&dev, 0, ascii, 8, false);
 	strcpy(ascii, "INITIATE");
 	display_text(&dev, 1, ascii, 8, false);
@@ -618,7 +605,7 @@ void tft(void *pvParameters)
 
 	while(1) {
 		xQueueReceive(xQueueCmd, &cmdBuf, portMAX_DELAY);
-		ESP_LOGI(pcTaskGetTaskName(0),"cmdBuf.command=%d", cmdBuf.command);
+		ESP_LOGI(pcTaskGetName(0),"cmdBuf.command=%d", cmdBuf.command);
 		if (cmdBuf.command == CMD_OPEN) {
 			sppHandle = cmdBuf.sppHandle;
 			strcpy((char *)ascii, "Connect ");
@@ -628,9 +615,9 @@ void tft(void *pvParameters)
 
 		} else if (cmdBuf.command == CMD_CLOSE) {
 			sppHandle = 0;
-			strcpy((char *)ascii, "        ");
+			strcpy((char *)ascii, "		   ");
 			display_text(&dev, 3, ascii, 8, false);
-			strcpy((char *)ascii, "        ");
+			strcpy((char *)ascii, "		   ");
 			display_text(&dev, 5, ascii, 8, false);
 
 		} else if (cmdBuf.command == CMD_START) {
@@ -676,78 +663,78 @@ static void SPIFFS_Directory(char * path) {
 
 void app_main()
 {
-    for (int i = 0; i < SPP_DATA_LEN; ++i) {
-        spp_data[i] = i;
-    }
+	for (int i = 0; i < SPP_DATA_LEN; ++i) {
+		spp_data[i] = i;
+	}
 
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK( ret );
+	esp_err_t ret = nvs_flash_init();
+	if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+		ESP_ERROR_CHECK(nvs_flash_erase());
+		ret = nvs_flash_init();
+	}
+	ESP_ERROR_CHECK( ret );
 
-    ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_BLE));
+	ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_BLE));
 
-    esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
-    if ((ret = esp_bt_controller_init(&bt_cfg)) != ESP_OK) {
-        ESP_LOGE(SPP_TAG, "%s initialize controller failed: %s\n", __func__, esp_err_to_name(ret));
-        return;
-    }
-    ESP_LOGI(SPP_TAG, "esp_bt_controller_init");
+	esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
+	if ((ret = esp_bt_controller_init(&bt_cfg)) != ESP_OK) {
+		ESP_LOGE(SPP_TAG, "%s initialize controller failed: %s\n", __func__, esp_err_to_name(ret));
+		return;
+	}
+	ESP_LOGI(SPP_TAG, "esp_bt_controller_init");
 
-    if ((ret = esp_bt_controller_enable(ESP_BT_MODE_CLASSIC_BT)) != ESP_OK) {
-        ESP_LOGE(SPP_TAG, "%s enable controller failed: %s\n", __func__, esp_err_to_name(ret));
-        return;
-    }
-    ESP_LOGI(SPP_TAG, "esp_bt_controller_enable");
+	if ((ret = esp_bt_controller_enable(ESP_BT_MODE_CLASSIC_BT)) != ESP_OK) {
+		ESP_LOGE(SPP_TAG, "%s enable controller failed: %s\n", __func__, esp_err_to_name(ret));
+		return;
+	}
+	ESP_LOGI(SPP_TAG, "esp_bt_controller_enable");
 
-    if ((ret = esp_bluedroid_init()) != ESP_OK) {
-        ESP_LOGE(SPP_TAG, "%s initialize bluedroid failed: %s\n", __func__, esp_err_to_name(ret));
-        return;
-    }
-    ESP_LOGI(SPP_TAG, "esp_bluedroid_init");
+	if ((ret = esp_bluedroid_init()) != ESP_OK) {
+		ESP_LOGE(SPP_TAG, "%s initialize bluedroid failed: %s\n", __func__, esp_err_to_name(ret));
+		return;
+	}
+	ESP_LOGI(SPP_TAG, "esp_bluedroid_init");
 
-    if ((ret = esp_bluedroid_enable()) != ESP_OK) {
-        ESP_LOGE(SPP_TAG, "%s enable bluedroid failed: %s\n", __func__, esp_err_to_name(ret));
-        return;
-    }
-    ESP_LOGI(SPP_TAG, "esp_bluedroid_enable");
+	if ((ret = esp_bluedroid_enable()) != ESP_OK) {
+		ESP_LOGE(SPP_TAG, "%s enable bluedroid failed: %s\n", __func__, esp_err_to_name(ret));
+		return;
+	}
+	ESP_LOGI(SPP_TAG, "esp_bluedroid_enable");
 
-    if ((ret = esp_bt_gap_register_callback(esp_bt_gap_cb)) != ESP_OK) {
-        ESP_LOGE(SPP_TAG, "%s gap register failed: %s\n", __func__, esp_err_to_name(ret));
-        return;
-    }
-    ESP_LOGI(SPP_TAG, "esp_bt_gap_register_callback");
+	if ((ret = esp_bt_gap_register_callback(esp_bt_gap_cb)) != ESP_OK) {
+		ESP_LOGE(SPP_TAG, "%s gap register failed: %s\n", __func__, esp_err_to_name(ret));
+		return;
+	}
+	ESP_LOGI(SPP_TAG, "esp_bt_gap_register_callback");
 
-    if ((ret = esp_spp_register_callback(esp_spp_cb)) != ESP_OK) {
-        ESP_LOGE(SPP_TAG, "%s spp register failed: %s\n", __func__, esp_err_to_name(ret));
-        return;
-    }
-    ESP_LOGI(SPP_TAG, "esp_spp_register_callback");
+	if ((ret = esp_spp_register_callback(esp_spp_cb)) != ESP_OK) {
+		ESP_LOGE(SPP_TAG, "%s spp register failed: %s\n", __func__, esp_err_to_name(ret));
+		return;
+	}
+	ESP_LOGI(SPP_TAG, "esp_spp_register_callback");
 
-    if ((ret = esp_spp_init(esp_spp_mode)) != ESP_OK) {
-        ESP_LOGE(SPP_TAG, "%s spp init failed: %s\n", __func__, esp_err_to_name(ret));
-        return;
-    }
-    ESP_LOGI(SPP_TAG, "esp_spp_init");
+	if ((ret = esp_spp_init(esp_spp_mode)) != ESP_OK) {
+		ESP_LOGE(SPP_TAG, "%s spp init failed: %s\n", __func__, esp_err_to_name(ret));
+		return;
+	}
+	ESP_LOGI(SPP_TAG, "esp_spp_init");
 
 #if (CONFIG_BT_SSP_ENABLED == true)
-    /* Set default parameters for Secure Simple Pairing */
-    esp_bt_sp_param_t param_type = ESP_BT_SP_IOCAP_MODE;
-    esp_bt_io_cap_t iocap = ESP_BT_IO_CAP_IO;
-    esp_bt_gap_set_security_param(param_type, &iocap, sizeof(uint8_t));
-    ESP_LOGI(SPP_TAG, "esp_bt_gap_set_security_param");
+	/* Set default parameters for Secure Simple Pairing */
+	esp_bt_sp_param_t param_type = ESP_BT_SP_IOCAP_MODE;
+	esp_bt_io_cap_t iocap = ESP_BT_IO_CAP_IO;
+	esp_bt_gap_set_security_param(param_type, &iocap, sizeof(uint8_t));
+	ESP_LOGI(SPP_TAG, "esp_bt_gap_set_security_param");
 #endif
 
-    /*
-     * Set default parameters for Legacy Pairing
-     * Use variable pin, input pin code when pairing
-     */
-    esp_bt_pin_type_t pin_type = ESP_BT_PIN_TYPE_VARIABLE;
-    esp_bt_pin_code_t pin_code;
-    esp_bt_gap_set_pin(pin_type, 0, pin_code);
-    ESP_LOGI(SPP_TAG, "esp_bt_gap_set_pin");
+	/*
+	 * Set default parameters for Legacy Pairing
+	 * Use variable pin, input pin code when pairing
+	 */
+	esp_bt_pin_type_t pin_type = ESP_BT_PIN_TYPE_VARIABLE;
+	esp_bt_pin_code_t pin_code;
+	esp_bt_gap_set_pin(pin_type, 0, pin_code);
+	ESP_LOGI(SPP_TAG, "esp_bt_gap_set_pin");
 
 
 #if CONFIG_STICKC || CONFIG_STACK
@@ -805,8 +792,7 @@ void app_main()
 
 
 #if CONFIG_STICK || CONFIG_STICKC
-	TimerHandle_t timer = xTimerCreate("send_timer", 5000 / portTICK_RATE_MS,
-        				true, NULL, send_timercb);
+	TimerHandle_t timer = xTimerCreate("send_timer", 5000 / portTICK_PERIOD_MS, true, NULL, timer_cb);
 	xTimerStart(timer, 0);
 	xTaskCreate(buttonStick, "BUTTON", 1024*4, NULL, 2, NULL);
 #endif
