@@ -6,10 +6,11 @@
    CONDITIONS OF ANY KIND, either express or implied.
 */
 
+#include <stdio.h>
+#include <inttypes.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
@@ -52,10 +53,15 @@ QueueHandle_t xQueueCmd;
 #if CONFIG_STACK
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 240
-#define CS_GPIO 14
+#define MOSI_GPIO 23
+#define SCLK_GPIO 18
+#define TFT_CS_GPIO 14
 #define DC_GPIO 27
 #define RESET_GPIO 33
 #define BL_GPIO 32
+#define MISO_GPIO -1
+#define XPT_CS_GPIO  -1
+#define XPT_IRQ_GPIO  -1
 #define DISPLAY_LENGTH 26
 #define GPIO_INPUT_A GPIO_NUM_39
 #define GPIO_INPUT_B GPIO_NUM_38
@@ -105,7 +111,7 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
 		ESP_LOGI(SPP_TAG, "ESP_SPP_CL_INIT_EVT");
 		break;
 	case ESP_SPP_DATA_IND_EVT:
-		ESP_LOGI(SPP_TAG, "ESP_SPP_DATA_IND_EVT len=%d handle=%d",
+		ESP_LOGI(SPP_TAG, "ESP_SPP_DATA_IND_EVT len=%d handle=%"PRIu32,
 				 param->data_ind.len, param->data_ind.handle);
 		esp_log_buffer_hex("",param->data_ind.data,param->data_ind.len);
 
@@ -164,11 +170,11 @@ void esp_bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
 
 #if (CONFIG_BT_SSP_ENABLED == true)
 	case ESP_BT_GAP_CFM_REQ_EVT:
-		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_CFM_REQ_EVT Please compare the numeric value: %d", param->cfm_req.num_val);
+		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_CFM_REQ_EVT Please compare the numeric value: %"PRIu32, param->cfm_req.num_val);
 		esp_bt_gap_ssp_confirm_reply(param->cfm_req.bda, true);
 		break;
 	case ESP_BT_GAP_KEY_NOTIF_EVT:
-		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_KEY_NOTIF_EVT passkey:%d", param->key_notif.passkey);
+		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_KEY_NOTIF_EVT passkey:%"PRIu32, param->key_notif.passkey);
 		break;
 	case ESP_BT_GAP_KEY_REQ_EVT:
 		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_KEY_REQ_EVT Please enter passkey!");
@@ -201,7 +207,9 @@ void tft(void *pvParameters)
 
 	// Setup Screen
 	TFT_t dev;
-	spi_master_init(&dev, CS_GPIO, DC_GPIO, RESET_GPIO, BL_GPIO);
+	//spi_master_init(&dev, CS_GPIO, DC_GPIO, RESET_GPIO, BL_GPIO);
+	spi_master_init(&dev, MOSI_GPIO, SCLK_GPIO, TFT_CS_GPIO, DC_GPIO,
+		RESET_GPIO, BL_GPIO, MISO_GPIO, XPT_CS_GPIO, XPT_IRQ_GPIO);
 	lcdInit(&dev, 0x9341, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
 	ESP_LOGI(pcTaskGetName(0), "Setup Screen done");
 
@@ -319,7 +327,17 @@ void app_main()
 		return;
 	}
 
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+	esp_spp_cfg_t bt_spp_cfg = {
+		.mode = esp_spp_mode,
+		.enable_l2cap_ertm = true,
+		.tx_buffer_size = 0, /* Only used for ESP_SPP_MODE_VFS mode */
+	};
+	if ((ret = esp_spp_enhanced_init(&bt_spp_cfg)) != ESP_OK) {
+#else
 	if ((ret = esp_spp_init(esp_spp_mode)) != ESP_OK) {
+#endif
+	//if ((ret = esp_spp_init(esp_spp_mode)) != ESP_OK) {
 		ESP_LOGE(SPP_TAG, "%s spp init failed: %s\n", __func__, esp_err_to_name(ret));
 		return;
 	}
