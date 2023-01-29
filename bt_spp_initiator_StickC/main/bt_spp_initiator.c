@@ -6,10 +6,11 @@
    CONDITIONS OF ANY KIND, either express or implied.
 */
 
+#include <stdio.h>
+#include <inttypes.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
@@ -50,13 +51,24 @@ static uint8_t spp_data[SPP_DATA_LEN];
 
 QueueHandle_t xQueueCmd;
 
-#define CONFIG_STACK 0
+#if defined(M5STACK)
+#define CONFIG_STACK 1
+#elif defined(M5STICK)
+#define CONFIG_STICK 1
+#elif defined(M5STICK_C)
 #define CONFIG_STICKC 1
-#define CONFIG_STICK 0
+#elif defined(M5STICK_C_PLUS)
+#define CONFIG_STICKC_PLUS 1
+#endif
 
 #if CONFIG_STACK
 #include "ili9340.h"
 #include "fontx.h"
+#endif
+
+#if CONFIG_STICK
+#include "sh1107.h"
+#include "font8x8_basic.h"
 #endif
 
 #if CONFIG_STICKC
@@ -65,10 +77,12 @@ QueueHandle_t xQueueCmd;
 #include "fontx.h"
 #endif
 
-#if CONFIG_STICK
-#include "sh1107.h"
-#include "font8x8_basic.h"
+#if CONFIG_STICKC_PLUS
+#include "axp192.h"
+#include "st7789.h"
+#include "fontx.h"
 #endif
+
 
 #if CONFIG_STACK
 #define SCREEN_WIDTH 320
@@ -80,27 +94,53 @@ QueueHandle_t xQueueCmd;
 #define FONT_WIDTH 12
 #define FONT_HEIGHT 24
 #define MAX_LINE 8
-#define DISPLAY_LENGTH 26
+#define MAX_CHARACTER 26
 #define GPIO_INPUT_A GPIO_NUM_39
 #define GPIO_INPUT_B GPIO_NUM_38
 #define GPIO_INPUT_C GPIO_NUM_37
 #endif
 
+#if CONFIG_STICK
+#define MAX_LINE 14
+#define MAX_CHARACTER 8
+#define GPIO_INPUT GPIO_NUM_35
+#define GPIO_BUZZER GPIO_NUM_26
+#endif
+
 #if CONFIG_STICKC
 #define SCREEN_WIDTH 80
 #define SCREEN_HEIGHT 160
+#define OFFSET_X 26
+#define OFFSET_Y 1
+#define GPIO_MOSI 15
+#define GPIO_SCLK 13
+#define GPIO_CS 5
+#define GPIO_DC 23
+#define GPIO_RESET 18
 #define FONT_WIDTH 8
-#define FONT_HEIGHT	16
+#define FONT_HEIGHT 16
 #define MAX_LINE 8
-#define DISPLAY_LENGTH 10
+#define MAX_CHARACTER 10
 #define GPIO_INPUT GPIO_NUM_37
 #endif
 
-#if CONFIG_STICK
-#define MAX_LINE 14
-#define DISPLAY_LENGTH 8
-#define GPIO_INPUT GPIO_NUM_35
-#define GPIO_BUZZER	GPIO_NUM_26
+#if CONFIG_STICKC_PLUS
+#define SCREEN_WIDTH 135
+#define SCREEN_HEIGHT 240
+#define OFFSET_X 52
+#define OFFSET_Y 40
+#define GPIO_MOSI 15
+#define GPIO_SCLK 13
+#define GPIO_CS 5 
+#define GPIO_DC 23
+#define GPIO_RESET 18
+#define GPIO_BL -1
+#define FONT_WIDTH 8
+#define FONT_HEIGHT 16
+#define MAX_CONFIG 20
+#define MAX_LINE 12
+#define MAX_CHARACTER 16
+#define GPIO_INPUT GPIO_NUM_37
 #endif
 
 
@@ -172,9 +212,8 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
 		break;
 	case ESP_SPP_DATA_IND_EVT:
 		//ESP_LOGI(SPP_TAG, "ESP_SPP_DATA_IND_EVT");
-		ESP_LOGI(SPP_TAG, "ESP_SPP_DATA_IND_EVT len=%d handle=%d",
+		ESP_LOGI(SPP_TAG, "ESP_SPP_DATA_IND_EVT len=%d handle=%"PRIu32,
 				 param->data_ind.len, param->data_ind.handle);
-		esp_log_buffer_hex("",param->data_ind.data,param->data_ind.len);
 		break;
 	case ESP_SPP_CONG_EVT:
 		ESP_LOGI(SPP_TAG, "ESP_SPP_CONG_EVT cong=%d", param->cong.cong);
@@ -251,11 +290,11 @@ static void esp_bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *pa
 
 #if (CONFIG_BT_SSP_ENABLED == true)
 	case ESP_BT_GAP_CFM_REQ_EVT:
-		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_CFM_REQ_EVT Please compare the numeric value: %d", param->cfm_req.num_val);
+		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_CFM_REQ_EVT Please compare the numeric value: %"PRIu32, param->cfm_req.num_val);
 		esp_bt_gap_ssp_confirm_reply(param->cfm_req.bda, true);
 		break;
 	case ESP_BT_GAP_KEY_NOTIF_EVT:
-		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_KEY_NOTIF_EVT passkey:%d", param->key_notif.passkey);
+		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_KEY_NOTIF_EVT passkey:%"PRIu32, param->key_notif.passkey);
 		break;
 	case ESP_BT_GAP_KEY_REQ_EVT:
 		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_KEY_REQ_EVT Please enter passkey!");
@@ -267,7 +306,7 @@ static void esp_bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *pa
 	}
 }
 
-#if CONFIG_STICK || CONFIG_STICKC
+#if CONFIG_STICK || CONFIG_STICKC || CONFIG_STICKC_PLUS
 void buttonStick(void *pvParameters)
 {
 	ESP_LOGI(pcTaskGetName(0), "Start");
@@ -291,7 +330,7 @@ void buttonStick(void *pvParameters)
 			}
 			TickType_t endTick = xTaskGetTickCount();
 			TickType_t diffTick = endTick-startTick;
-			ESP_LOGI(pcTaskGetName(0),"diffTick=%d",diffTick);
+			ESP_LOGI(pcTaskGetName(0),"diffTick=%"PRIu32, diffTick);
 			cmdBuf.command = CMD_START;
 			if (diffTick > 200) cmdBuf.command = CMD_STOP;
 			xQueueSend(xQueueCmd, &cmdBuf, 0);
@@ -386,7 +425,6 @@ void buttonC(void *pvParameters)
 		vTaskDelay(1);
 	}
 }
-
 #endif
 
 
@@ -414,7 +452,7 @@ void tft(void *pvParameters)
 	ESP_LOGI(pcTaskGetName(0), "Setup Screen done");
 
 	// Initial Screen
-	uint8_t ascii[DISPLAY_LENGTH+1];
+	uint8_t ascii[MAX_CHARACTER+1];
 	lcdFillScreen(&dev, BLACK);
 	lcdSetFontDirection(&dev, 0);
 	strcpy((char *)ascii, "SPP INITIATOR");
@@ -430,7 +468,7 @@ void tft(void *pvParameters)
 	CMD_t cmdBuf;
 	while(1) {
 		xQueueReceive(xQueueCmd, &cmdBuf, portMAX_DELAY);
-		ESP_LOGI(pcTaskGetName(0),"cmdBuf.command=%d", cmdBuf.command);
+		ESP_LOGD(pcTaskGetName(0),"cmdBuf.command=%d", cmdBuf.command);
 		if (cmdBuf.command == CMD_OPEN) {
 			sppHandle = cmdBuf.sppHandle;
 			strcpy((char *)ascii, "Connect");
@@ -470,7 +508,7 @@ static void timer_cb(TimerHandle_t arg)
 	static uint32_t counter = 0;
 	CMD_t cmdBuf;
 	cmdBuf.command = CMD_SEND;
-	sprintf((char *)cmdBuf.payload, "This is M5StickC:%d", counter);
+	sprintf((char *)cmdBuf.payload, "This is M5StickC:%"PRIu32, counter);
 	cmdBuf.length = strlen((char *)cmdBuf.payload);
 	xQueueSend(xQueueCmd, &cmdBuf, 0);
 	counter++;
@@ -478,7 +516,7 @@ static void timer_cb(TimerHandle_t arg)
 #endif
 
 
-#if CONFIG_STICKC
+#if CONFIG_STICKC || CONFIG_STICKC_PLUS
 void tft(void *pvParameters)
 {
 	ESP_LOGI(pcTaskGetName(0), "Start");
@@ -496,13 +534,19 @@ void tft(void *pvParameters)
 	ESP_LOGD(pcTaskGetName(0), "fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
 
 	// Setup Screen
+#if CONFIG_STICKC
 	ST7735_t dev;
-	spi_master_init(&dev);
-	lcdInit(&dev, SCREEN_WIDTH, SCREEN_HEIGHT);
+    spi_master_init(&dev, GPIO_MOSI, GPIO_SCLK, GPIO_CS, GPIO_DC, GPIO_RESET);
+#endif
+#if CONFIG_STICKC_PLUS
+	TFT_t dev;
+	spi_master_init(&dev, GPIO_MOSI, GPIO_SCLK, GPIO_CS, GPIO_DC, GPIO_RESET, GPIO_BL);
+#endif
+    lcdInit(&dev, SCREEN_WIDTH, SCREEN_HEIGHT, OFFSET_X, OFFSET_Y);
 	ESP_LOGI(pcTaskGetName(0), "Setup Screen done");
 
 	// Initial Screen
-	uint8_t ascii[DISPLAY_LENGTH+1];
+	uint8_t ascii[MAX_CHARACTER+1];
 	lcdFillScreen(&dev, BLACK);
 	lcdSetFontDirection(&dev, 0);
 	strcpy((char *)ascii, "SPP");
@@ -518,7 +562,7 @@ void tft(void *pvParameters)
 
 	while(1) {
 		xQueueReceive(xQueueCmd, &cmdBuf, portMAX_DELAY);
-		ESP_LOGI(pcTaskGetName(0),"cmdBuf.command=%d", cmdBuf.command);
+		ESP_LOGD(pcTaskGetName(0),"cmdBuf.command=%d", cmdBuf.command);
 		if (cmdBuf.command == CMD_OPEN) {
 			sppHandle = cmdBuf.sppHandle;
 			strcpy((char *)ascii, "Connect");
@@ -565,13 +609,27 @@ void tft(void *pvParameters)
 }
 #endif
 
+#if CONFIG_STICKC_PLUS
+static void timer_cb(TimerHandle_t arg)
+{
+	static uint32_t counter = 0;
+	CMD_t cmdBuf;
+	cmdBuf.command = CMD_SEND;
+	sprintf((char *)cmdBuf.payload, "This is M5StickC+:%"PRIu32, counter);
+	cmdBuf.length = strlen((char *)cmdBuf.payload);
+	xQueueSend(xQueueCmd, &cmdBuf, 0);
+	counter++;
+}
+#endif
+
+
 #if CONFIG_STICK
 static void timer_cb(TimerHandle_t arg)
 {
 	static uint32_t counter = 0;
 	CMD_t cmdBuf;
 	cmdBuf.command = CMD_SEND;
-	sprintf((char *)cmdBuf.payload, "This is M5Stick:%d", counter);
+	sprintf((char *)cmdBuf.payload, "This is M5Stick:%"PRIu32, counter);
 	cmdBuf.length = strlen((char *)cmdBuf.payload);
 	xQueueSend(xQueueCmd, &cmdBuf, 0);
 	counter++;
@@ -593,7 +651,7 @@ void tft(void *pvParameters)
 	// Initial Screen
 	clear_screen(&dev, false);
 	display_contrast(&dev, 0xff);
-	char ascii[DISPLAY_LENGTH+1];
+	char ascii[MAX_CHARACTER+1];
 	strcpy(ascii, "SPP	   ");
 	display_text(&dev, 0, ascii, 8, false);
 	strcpy(ascii, "INITIATE");
@@ -605,7 +663,7 @@ void tft(void *pvParameters)
 
 	while(1) {
 		xQueueReceive(xQueueCmd, &cmdBuf, portMAX_DELAY);
-		ESP_LOGI(pcTaskGetName(0),"cmdBuf.command=%d", cmdBuf.command);
+		ESP_LOGD(pcTaskGetName(0),"cmdBuf.command=%d", cmdBuf.command);
 		if (cmdBuf.command == CMD_OPEN) {
 			sppHandle = cmdBuf.sppHandle;
 			strcpy((char *)ascii, "Connect ");
@@ -648,7 +706,7 @@ void tft(void *pvParameters)
 
 
 
-#if CONFIG_STICKC || CONFIG_STACK
+#if CONFIG_STICKC || CONFIG_STICKC_PLUS || CONFIG_STACK
 static void SPIFFS_Directory(char * path) {
 	DIR* dir = opendir(path);
 	assert(dir != NULL);
@@ -713,7 +771,17 @@ void app_main()
 	}
 	ESP_LOGI(SPP_TAG, "esp_spp_register_callback");
 
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+	esp_spp_cfg_t bt_spp_cfg = {
+		.mode = esp_spp_mode,
+		.enable_l2cap_ertm = true,
+		.tx_buffer_size = 0, /* Only used for ESP_SPP_MODE_VFS mode */
+	};
+	if ((ret = esp_spp_enhanced_init(&bt_spp_cfg)) != ESP_OK) {
+#else
 	if ((ret = esp_spp_init(esp_spp_mode)) != ESP_OK) {
+#endif
+	//if ((ret = esp_spp_init(esp_spp_mode)) != ESP_OK) {
 		ESP_LOGE(SPP_TAG, "%s spp init failed: %s\n", __func__, esp_err_to_name(ret));
 		return;
 	}
@@ -737,7 +805,7 @@ void app_main()
 	ESP_LOGI(SPP_TAG, "esp_bt_gap_set_pin");
 
 
-#if CONFIG_STICKC || CONFIG_STACK
+#if CONFIG_STICKC || CONFIG_STICKC_PLUS || CONFIG_STACK
 	ESP_LOGI(SPP_TAG, "Initializing SPIFFS");
 	esp_vfs_spiffs_conf_t conf = {
 		.base_path = "/spiffs",
@@ -782,6 +850,13 @@ void app_main()
 	AXP192_PowerOn();
 #endif
 
+#if CONFIG_STICKC_PLUS
+	// power on
+	i2c_master_init();
+	AXP192_PowerOn();
+	AXP192_ScreenBreath(11);
+#endif
+
 	xTaskCreate(tft, "TFT", 1024*4, NULL, 2, NULL);
 
 #if CONFIG_STACK
@@ -791,8 +866,8 @@ void app_main()
 #endif
 
 
-#if CONFIG_STICK || CONFIG_STICKC
-	TimerHandle_t timer = xTimerCreate("send_timer", 5000 / portTICK_PERIOD_MS, true, NULL, timer_cb);
+#if CONFIG_STICK || CONFIG_STICKC || CONFIG_STICKC_PLUS
+	TimerHandle_t timer = xTimerCreate("send_timer", 2000 / portTICK_PERIOD_MS, true, NULL, timer_cb);
 	xTimerStart(timer, 0);
 	xTaskCreate(buttonStick, "BUTTON", 1024*4, NULL, 2, NULL);
 #endif
