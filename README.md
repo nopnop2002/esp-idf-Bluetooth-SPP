@@ -24,6 +24,19 @@ make flash
 
 ---
 
+# Initiator for M5Stick
+
+```
+git clone https://github.com/nopnop2002/esp-idf-Bluetooth-SPP
+cd esp-idf-Bluetooth-SPP/bt_spp_initiator_Stick/
+make menuconfig
+make flash
+```
+
+\*There is no MENU ITEM where this application is peculiar.   
+
+---
+
 # Initiator for M5StickC
 
 ```
@@ -39,16 +52,20 @@ __You need to specify Baud rate for flashing.__
 
 ---
 
-# Initiator for M5Stick
+# Initiator for M5StickC+
 
 ```
 git clone https://github.com/nopnop2002/esp-idf-Bluetooth-SPP
-cd esp-idf-Bluetooth-SPP/bt_spp_initiator_Stick/
+cd esp-idf-Bluetooth-SPP/bt_spp_initiator_StickC+/
 make menuconfig
-make flash
+make flash -b 115200
 ```
 
 \*There is no MENU ITEM where this application is peculiar.   
+
+__You need to specify Baud rate for flashing.__   
+
+
 
 
 
