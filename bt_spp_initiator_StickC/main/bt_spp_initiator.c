@@ -32,7 +32,7 @@
 #include "cmd.h"
 
 #define SPP_TAG "SPP_INITIATOR"
-#define EXCAMPLE_DEVICE_NAME "ESP_SPP_INITIATOR"
+#define DEVICE_NAME "ESP_SPP_INITIATOR"
 
 static const esp_spp_mode_t esp_spp_mode = ESP_SPP_MODE_CB;
 static const esp_spp_sec_t sec_mask = ESP_SPP_SEC_AUTHENTICATE;
@@ -182,7 +182,11 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
 	switch (event) {
 	case ESP_SPP_INIT_EVT:
 		ESP_LOGI(SPP_TAG, "ESP_SPP_INIT_EVT");
-		esp_bt_dev_set_device_name(EXCAMPLE_DEVICE_NAME);
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
+		esp_bt_gap_set_device_name(DEVICE_NAME);
+#else
+		esp_bt_dev_set_device_name(DEVICE_NAME);
+#endif
 		esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
 		esp_bt_gap_start_discovery(inq_mode, inq_len, inq_num_rsps);
 		break;
@@ -237,12 +241,12 @@ static void esp_bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *pa
 	switch(event){
 	case ESP_BT_GAP_DISC_RES_EVT:
 		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_DISC_RES_EVT");
-		esp_log_buffer_hex(SPP_TAG, param->disc_res.bda, ESP_BD_ADDR_LEN);
+		ESP_LOG_BUFFER_HEXDUMP(SPP_TAG, param->disc_res.bda, ESP_BD_ADDR_LEN, ESP_LOG_INFO);
 		ESP_LOGI(SPP_TAG, "ESP_BT_GAP_DISC_RES_EVT param->disc_res.num_prop=%d", param->disc_res.num_prop);
 		for (int i = 0; i < param->disc_res.num_prop; i++){
 			if (param->disc_res.prop[i].type == ESP_BT_GAP_DEV_PROP_EIR
 				&& get_name_from_eir(param->disc_res.prop[i].val, peer_bdname, &peer_bdname_len)){
-				esp_log_buffer_char(SPP_TAG, peer_bdname, peer_bdname_len);
+				ESP_LOG_BUFFER_HEXDUMP(SPP_TAG, peer_bdname, peer_bdname_len, ESP_LOG_INFO);
 				if (strlen(remote_device_name) == peer_bdname_len
 					&& strncmp(peer_bdname, remote_device_name, peer_bdname_len) == 0) {
 					memcpy(peer_bd_addr, param->disc_res.bda, ESP_BD_ADDR_LEN);
@@ -264,7 +268,7 @@ static void esp_bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *pa
 	case ESP_BT_GAP_AUTH_CMPL_EVT:{
 		if (param->auth_cmpl.stat == ESP_BT_STATUS_SUCCESS) {
 			ESP_LOGI(SPP_TAG, "authentication success: %s", param->auth_cmpl.device_name);
-			esp_log_buffer_hex(SPP_TAG, param->auth_cmpl.bda, ESP_BD_ADDR_LEN);
+			ESP_LOG_BUFFER_HEXDUMP(SPP_TAG, param->auth_cmpl.bda, ESP_BD_ADDR_LEN, ESP_LOG_INFO);
 		} else {
 			ESP_LOGE(SPP_TAG, "authentication failed, status:%d", param->auth_cmpl.stat);
 		}
@@ -309,7 +313,7 @@ static void esp_bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *pa
 #if CONFIG_STICK || CONFIG_STICKC || CONFIG_STICKC_PLUS
 void buttonStick(void *pvParameters)
 {
-	ESP_LOGI(pcTaskGetName(0), "Start");
+	ESP_LOGI(pcTaskGetName(NULL), "Start");
 	CMD_t cmdBuf;
 	cmdBuf.taskHandle = xTaskGetCurrentTaskHandle();
 
@@ -320,7 +324,7 @@ void buttonStick(void *pvParameters)
 	while(1) {
 		int level = gpio_get_level(GPIO_INPUT);
 		if (level == 0) {
-			ESP_LOGI(pcTaskGetName(0), "Push Button");
+			ESP_LOGI(pcTaskGetName(NULL), "Push Button");
 			cmdBuf.command = CMD_START;
 			TickType_t startTick = xTaskGetTickCount();
 			while(1) {
@@ -330,7 +334,7 @@ void buttonStick(void *pvParameters)
 			}
 			TickType_t endTick = xTaskGetTickCount();
 			TickType_t diffTick = endTick-startTick;
-			ESP_LOGI(pcTaskGetName(0),"diffTick=%"PRIu32, diffTick);
+			ESP_LOGI(pcTaskGetName(NULL),"diffTick=%"PRIu32, diffTick);
 			cmdBuf.command = CMD_START;
 			if (diffTick > 200) cmdBuf.command = CMD_STOP;
 			xQueueSend(xQueueCmd, &cmdBuf, 0);
@@ -344,7 +348,7 @@ void buttonStick(void *pvParameters)
 #if CONFIG_STACK
 void buttonA(void *pvParameters)
 {
-	ESP_LOGI(pcTaskGetName(0), "Start");
+	ESP_LOGI(pcTaskGetName(NULL), "Start");
 	CMD_t cmdBuf;
 	cmdBuf.command = CMD_SEND;
 	strcpy((char *)cmdBuf.payload, "abcdefghijk");
@@ -358,7 +362,7 @@ void buttonA(void *pvParameters)
 	while(1) {
 		int level = gpio_get_level(GPIO_INPUT_A);
 		if (level == 0) {
-			ESP_LOGI(pcTaskGetName(0), "Push Button");
+			ESP_LOGI(pcTaskGetName(NULL), "Push Button");
 			while(1) {
 				level = gpio_get_level(GPIO_INPUT_A);
 				if (level == 1) break;
@@ -372,7 +376,7 @@ void buttonA(void *pvParameters)
 
 void buttonB(void *pvParameters)
 {
-	ESP_LOGI(pcTaskGetName(0), "Start");
+	ESP_LOGI(pcTaskGetName(NULL), "Start");
 	CMD_t cmdBuf;
 	cmdBuf.command = CMD_SEND;
 	strcpy((char *)cmdBuf.payload, "01234567890");
@@ -386,7 +390,7 @@ void buttonB(void *pvParameters)
 	while(1) {
 		int level = gpio_get_level(GPIO_INPUT_B);
 		if (level == 0) {
-			ESP_LOGI(pcTaskGetName(0), "Push Button");
+			ESP_LOGI(pcTaskGetName(NULL), "Push Button");
 			while(1) {
 				level = gpio_get_level(GPIO_INPUT_B);
 				if (level == 1) break;
@@ -400,7 +404,7 @@ void buttonB(void *pvParameters)
 
 void buttonC(void *pvParameters)
 {
-	ESP_LOGI(pcTaskGetName(0), "Start");
+	ESP_LOGI(pcTaskGetName(NULL), "Start");
 	CMD_t cmdBuf;
 	cmdBuf.command = CMD_SEND;
 	strcpy((char *)cmdBuf.payload, "ABCDEFGHIJK");
@@ -414,7 +418,7 @@ void buttonC(void *pvParameters)
 	while(1) {
 		int level = gpio_get_level(GPIO_INPUT_C);
 		if (level == 0) {
-			ESP_LOGI(pcTaskGetName(0), "Push Button");
+			ESP_LOGI(pcTaskGetName(NULL), "Push Button");
 			while(1) {
 				level = gpio_get_level(GPIO_INPUT_C);
 				if (level == 1) break;
@@ -431,7 +435,7 @@ void buttonC(void *pvParameters)
 #if CONFIG_STACK
 void tft(void *pvParameters)
 {
-	ESP_LOGI(pcTaskGetName(0), "Start");
+	ESP_LOGI(pcTaskGetName(NULL), "Start");
 	// set font file
 	FontxFile fxG[2];
 	InitFontx(fxG,"/spiffs/ILGH24XB.FNT",""); // 12x24Dot Gothic
@@ -443,13 +447,13 @@ void tft(void *pvParameters)
 	uint8_t fontWidth;
 	uint8_t fontHeight;
 	GetFontx(fxG, 0, buffer, &fontWidth, &fontHeight);
-	ESP_LOGD(pcTaskGetName(0), "fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
+	ESP_LOGD(pcTaskGetName(NULL), "fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
 
 	// Setup Screen
 	TFT_t dev;
 	spi_master_init(&dev, CS_GPIO, DC_GPIO, RESET_GPIO, BL_GPIO);
 	lcdInit(&dev, 0x9341, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
-	ESP_LOGI(pcTaskGetName(0), "Setup Screen done");
+	ESP_LOGI(pcTaskGetName(NULL), "Setup Screen done");
 
 	// Initial Screen
 	uint8_t ascii[MAX_CHARACTER+1];
@@ -468,7 +472,7 @@ void tft(void *pvParameters)
 	CMD_t cmdBuf;
 	while(1) {
 		xQueueReceive(xQueueCmd, &cmdBuf, portMAX_DELAY);
-		ESP_LOGD(pcTaskGetName(0),"cmdBuf.command=%d", cmdBuf.command);
+		ESP_LOGD(pcTaskGetName(NULL),"cmdBuf.command=%d", cmdBuf.command);
 		if (cmdBuf.command == CMD_OPEN) {
 			sppHandle = cmdBuf.sppHandle;
 			strcpy((char *)ascii, "Connect");
@@ -519,7 +523,7 @@ static void timer_cb(TimerHandle_t arg)
 #if CONFIG_STICKC || CONFIG_STICKC_PLUS
 void tft(void *pvParameters)
 {
-	ESP_LOGI(pcTaskGetName(0), "Start");
+	ESP_LOGI(pcTaskGetName(NULL), "Start");
 	// set font file
 	FontxFile fxG[2];
 	InitFontx(fxG,"/spiffs/ILGH16XB.FNT",""); // 8x16Dot Gothic
@@ -531,19 +535,19 @@ void tft(void *pvParameters)
 	uint8_t fontWidth;
 	uint8_t fontHeight;
 	GetFontx(fxG, 0, buffer, &fontWidth, &fontHeight);
-	ESP_LOGD(pcTaskGetName(0), "fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
+	ESP_LOGD(pcTaskGetName(NULL), "fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
 
 	// Setup Screen
 #if CONFIG_STICKC
 	ST7735_t dev;
-    spi_master_init(&dev, GPIO_MOSI, GPIO_SCLK, GPIO_CS, GPIO_DC, GPIO_RESET);
+	spi_master_init(&dev, GPIO_MOSI, GPIO_SCLK, GPIO_CS, GPIO_DC, GPIO_RESET);
 #endif
 #if CONFIG_STICKC_PLUS
 	TFT_t dev;
 	spi_master_init(&dev, GPIO_MOSI, GPIO_SCLK, GPIO_CS, GPIO_DC, GPIO_RESET, GPIO_BL);
 #endif
-    lcdInit(&dev, SCREEN_WIDTH, SCREEN_HEIGHT, OFFSET_X, OFFSET_Y);
-	ESP_LOGI(pcTaskGetName(0), "Setup Screen done");
+	lcdInit(&dev, SCREEN_WIDTH, SCREEN_HEIGHT, OFFSET_X, OFFSET_Y);
+	ESP_LOGI(pcTaskGetName(NULL), "Setup Screen done");
 
 	// Initial Screen
 	uint8_t ascii[MAX_CHARACTER+1];
@@ -562,7 +566,7 @@ void tft(void *pvParameters)
 
 	while(1) {
 		xQueueReceive(xQueueCmd, &cmdBuf, portMAX_DELAY);
-		ESP_LOGD(pcTaskGetName(0),"cmdBuf.command=%d", cmdBuf.command);
+		ESP_LOGD(pcTaskGetName(NULL),"cmdBuf.command=%d", cmdBuf.command);
 		if (cmdBuf.command == CMD_OPEN) {
 			sppHandle = cmdBuf.sppHandle;
 			strcpy((char *)ascii, "Connect");
@@ -640,13 +644,13 @@ static void timer_cb(TimerHandle_t arg)
 #if CONFIG_STICK
 void tft(void *pvParameters)
 {
-	ESP_LOGI(pcTaskGetName(0), "Start");
+	ESP_LOGI(pcTaskGetName(NULL), "Start");
 
 	// Setup Screen
 	SH1107_t dev;
 	spi_master_init(&dev);
 	spi_init(&dev, 64, 128);
-	ESP_LOGI(pcTaskGetName(0), "Setup Screen done");
+	ESP_LOGI(pcTaskGetName(NULL), "Setup Screen done");
 
 	// Initial Screen
 	clear_screen(&dev, false);
@@ -663,7 +667,7 @@ void tft(void *pvParameters)
 
 	while(1) {
 		xQueueReceive(xQueueCmd, &cmdBuf, portMAX_DELAY);
-		ESP_LOGD(pcTaskGetName(0),"cmdBuf.command=%d", cmdBuf.command);
+		ESP_LOGD(pcTaskGetName(NULL),"cmdBuf.command=%d", cmdBuf.command);
 		if (cmdBuf.command == CMD_OPEN) {
 			sppHandle = cmdBuf.sppHandle;
 			strcpy((char *)ascii, "Connect ");
