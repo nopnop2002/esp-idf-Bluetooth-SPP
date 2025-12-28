@@ -1,9 +1,11 @@
-#define CMD_OPEN    100
-#define CMD_SEND    200
-#define CMD_START   220
-#define CMD_STOP    240
-#define CMD_RECEIVE 300
-#define CMD_CLOSE   400
+typedef enum {
+	CMD_OPEN,
+	CMD_SEND,
+	CMD_START,
+	CMD_STOP,
+	CMD_RECEIVE,
+	CMD_CLOSE
+} command_t;
 
 typedef struct {
     uint32_t sppHandle;
