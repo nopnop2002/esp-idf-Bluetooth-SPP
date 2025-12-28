@@ -30,7 +30,7 @@
 
 #define SPP_TAG "SPP_ACCEPTOR"
 #define SPP_SERVER_NAME "SPP_SERVER"
-#define EXCAMPLE_DEVICE_NAME "ESP_SPP_ACCEPTOR"
+#define DEVICE_NAME "ESP_SPP_ACCEPTOR"
 
 static const esp_spp_mode_t esp_spp_mode = ESP_SPP_MODE_CB;
 
@@ -89,7 +89,11 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
 	switch (event) {
 	case ESP_SPP_INIT_EVT:
 		ESP_LOGI(SPP_TAG, "ESP_SPP_INIT_EVT");
-		esp_bt_dev_set_device_name(EXCAMPLE_DEVICE_NAME);
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
+		esp_bt_gap_set_device_name(DEVICE_NAME);
+#else
+		esp_bt_dev_set_device_name(DEVICE_NAME);
+#endif
 		esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
 		esp_spp_start_srv(sec_mask,role_slave, 0, SPP_SERVER_NAME);
 		break;
@@ -113,7 +117,7 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
 	case ESP_SPP_DATA_IND_EVT:
 		ESP_LOGI(SPP_TAG, "ESP_SPP_DATA_IND_EVT len=%d handle=%"PRIu32,
 				 param->data_ind.len, param->data_ind.handle);
-		esp_log_buffer_hex("",param->data_ind.data,param->data_ind.len);
+		ESP_LOG_BUFFER_HEXDUMP(__FUNCTION__, param->data_ind.data, param->data_ind.len, ESP_LOG_INFO);
 
 		cmdBuf.sppHandle = param->data_ind.handle;
 		cmdBuf.command = CMD_RECEIVE;
@@ -144,7 +148,7 @@ void esp_bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
 	case ESP_BT_GAP_AUTH_CMPL_EVT:{
 		if (param->auth_cmpl.stat == ESP_BT_STATUS_SUCCESS) {
 			ESP_LOGI(SPP_TAG, "authentication success: %s", param->auth_cmpl.device_name);
-			esp_log_buffer_hex(SPP_TAG, param->auth_cmpl.bda, ESP_BD_ADDR_LEN);
+			ESP_LOG_BUFFER_HEXDUMP(SPP_TAG, param->auth_cmpl.bda, ESP_BD_ADDR_LEN, ESP_LOG_INFO);
 		} else {
 			ESP_LOGE(SPP_TAG, "authentication failed, status:%d", param->auth_cmpl.stat);
 		}
@@ -191,7 +195,7 @@ void esp_bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
 
 void tft(void *pvParameters)
 {
-	ESP_LOGI(pcTaskGetName(0), "Start");
+	ESP_LOGI(pcTaskGetName(NULL), "Start");
 	// set font file
 	FontxFile fxG[2];
 	InitFontx(fxG,"/spiffs/ILGH24XB.FNT",""); // 12x24Dot Gothic
@@ -203,7 +207,7 @@ void tft(void *pvParameters)
 	uint8_t fontWidth;
 	uint8_t fontHeight;
 	GetFontx(fxG, 0, buffer, &fontWidth, &fontHeight);
-	ESP_LOGI(pcTaskGetName(0), "fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
+	ESP_LOGI(pcTaskGetName(NULL), "fontWidth=%d fontHeight=%d",fontWidth,fontHeight);
 
 	// Setup Screen
 	TFT_t dev;
@@ -211,12 +215,12 @@ void tft(void *pvParameters)
 	spi_master_init(&dev, MOSI_GPIO, SCLK_GPIO, TFT_CS_GPIO, DC_GPIO,
 		RESET_GPIO, BL_GPIO, MISO_GPIO, XPT_CS_GPIO, XPT_IRQ_GPIO);
 	lcdInit(&dev, 0x9341, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
-	ESP_LOGI(pcTaskGetName(0), "Setup Screen done");
+	ESP_LOGI(pcTaskGetName(NULL), "Setup Screen done");
 
 	int lines = (SCREEN_HEIGHT - fontHeight) / fontHeight;
-	ESP_LOGD(pcTaskGetName(0), "SCREEN_HEIGHT=%d fontHeight=%d lines=%d", SCREEN_HEIGHT, fontHeight, lines);
+	ESP_LOGD(pcTaskGetName(NULL), "SCREEN_HEIGHT=%d fontHeight=%d lines=%d", SCREEN_HEIGHT, fontHeight, lines);
 	int ymax = (lines+1) * fontHeight;
-	ESP_LOGD(pcTaskGetName(0), "ymax=%d",ymax);
+	ESP_LOGD(pcTaskGetName(NULL), "ymax=%d",ymax);
 
 	// Initial Screen
 	uint8_t ascii[DISPLAY_LENGTH+1];
@@ -239,7 +243,7 @@ void tft(void *pvParameters)
 
 	while(1) {
 		xQueueReceive(xQueueCmd, &cmdBuf, portMAX_DELAY);
-		ESP_LOGI(pcTaskGetName(0),"cmdBuf.command=%d", cmdBuf.command);
+		ESP_LOGI(pcTaskGetName(NULL),"cmdBuf.command=%d", cmdBuf.command);
 		if (cmdBuf.command == CMD_OPEN) {
 			strcpy((char *)ascii, "Connect");
 			lcdDrawFillRect(&dev, xstatus, 0, SCREEN_WIDTH-1, fontHeight-1, BLACK);
